@@ -1,4 +1,6 @@
-import { Context, Telegraf } from 'telegraf';
-import { Update } from 'typegram';
-const bot: Telegraf<Context<Update>> = new Telegraf(process.env.BOT_TOKEN as string);
+import {BotService} from "./services/bot";
+import {IBot} from "./interfaces/Bot.interface";
 
+const botInstance: IBot = new BotService();
+
+botInstance.bot.launch();
