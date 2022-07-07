@@ -1,8 +1,8 @@
 import {ILanguage} from '../../interfaces/Language.interface';
 import {LanguageCode, AlphabeticalSystem, Country} from '../../types/localisation';
 
-export const UA: ILanguage = {
-  code: <LanguageCode>'ua',
+export const UK: ILanguage = {
+  code: <LanguageCode>'uk',
   country: <Country>'Ukraine',
   alphabeticalSystem: <AlphabeticalSystem>'cyrillic',
 }

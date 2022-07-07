@@ -1,22 +1,27 @@
-import {Context, Telegraf} from 'telegraf';
+import {LoggerService} from '../logger/logger.service';
+import {Context, Markup, Telegraf} from 'telegraf';
 import {Update} from 'typegram';
 import {IBot} from '../../interfaces/Bot.interface';
-import {db} from '../../db';
 import {IUser} from '../../interfaces/User.interface';
-import LocalisationService from '../localisation/localisation.service';
-import {UA} from '../../constants/localisation';
-import {LoggerService} from '../logger/logger.service';
 import {IMessage} from '../../interfaces/Message.interface';
+import LocalisationService from '../localisation/localisation.service';
+import {db} from '../../db';
+import {EN, UK} from '../../constants/localisation';
 import {SENDING} from '../../constants/message/status.constants';
+import {text} from '../../text';
+import translate from '@vitalets/google-translate-api';
+import {ILocalisation} from '../../interfaces/Localisation.interface';
 
 export class BotService implements IBot {
-  public bot: Telegraf<Context<Update>>;
+  public bot;
+  private ls;
 
   constructor() {
     this.bot = this.initBot();
+    this.ls = new LocalisationService();
   }
 
-  private initBot(): Telegraf<Context<Update>> {
+  private initBot(): any {
     const bot = this.createTelegramBot();
 
     bot.start(this.startHandler());
@@ -33,6 +38,24 @@ export class BotService implements IBot {
       new LoggerService().logMessage(message);
     })
 
+    bot.action('uk', (ctx: any) => {
+      Markup.removeKeyboard();
+      this.ls.setLanguage(UK, ctx.update.callback_query.from.id);
+      ctx.reply('Мову обрано: Українська');
+      ctx.editMessageReplyMarkup({
+        reply_markup: false,
+      })
+    })
+
+    bot.action('en', (ctx: any) => {
+      Markup.removeKeyboard();
+      this.ls.setLanguage(EN, ctx.update.callback_query.from.id);
+      ctx.reply('Language chose: English');
+      ctx.editMessageReplyMarkup({
+        reply_markup: false,
+      })
+    })
+
     return bot;
   }
 
@@ -43,13 +66,16 @@ export class BotService implements IBot {
   private startHandler(): (ctx: any) => Promise<void> {
     return async (ctx: any) => {
       const from = ctx.update.message.from;
-      let match = false;
       const response = await db.collection('users').get();
+
+      let match = false;
+
       response.forEach(doc => {
         if (String(doc.data().id) === String(from.id)) {
           match = true;
         }
       })
+
       if (!match) {
         const user: IUser = {
           id: String(from.id),
@@ -57,10 +83,22 @@ export class BotService implements IBot {
           isBlocked: false,
           name: from.first_name,
         };
+
         await db.collection('users').doc(String(from.id)).set(user);
-      } else {
-        new LocalisationService().setLanguage(UA, from.id);
       }
+      const language = await this.ls.getUserLanguage(from.id);
+
+      const keyboard = Markup.inlineKeyboard([
+        Markup.button.callback('🇺🇦', UK.code),
+        Markup.button.callback('🇬🇧', EN.code),
+      ]);
+      translate(text.start, {to: language}).then(res => {
+        ctx.reply(res.text, keyboard);
+      }).catch(err => {
+        console.log(err);
+        ctx.reply(text.start, keyboard);
+      });
+
     };
   }
 }
