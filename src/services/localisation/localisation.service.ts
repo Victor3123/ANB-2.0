@@ -3,9 +3,9 @@ import {ILanguage} from '../../interfaces/Language.interface';
 import {UserId} from '../../types/user-id';
 import {EN, UK} from '../../constants/localisation';
 import {db} from '../../db';
-import {text} from '../../text';
 import {LanguageCode} from '../../types/localisation';
 import {firestore} from 'firebase-admin';
+import translate from '@vitalets/google-translate-api';
 import DocumentData = firestore.DocumentData;
 
 export default class LocalisationService implements ILocalisation {
@@ -33,4 +33,9 @@ export default class LocalisationService implements ILocalisation {
     })
     return code;
   }
+
+  async translate(text: string, to: LanguageCode): Promise<string> {
+    const res = await translate(text, {to: to});
+    return res.text;
+  } 
 }

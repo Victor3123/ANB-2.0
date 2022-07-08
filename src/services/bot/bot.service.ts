@@ -8,13 +8,18 @@ import LocalisationService from '../localisation/localisation.service';
 import {db} from '../../db';
 import {EN, UK} from '../../constants/localisation';
 import {SENDING} from '../../constants/message/status.constants';
-import {text} from '../../text';
 import translate from '@vitalets/google-translate-api';
 import {ILocalisation} from '../../interfaces/Localisation.interface';
+import { text } from '../localisation/text';
+import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
+import { UserId } from 'src/types/user-id';
+import { Menu } from './menu';
+
 
 export class BotService implements IBot {
-  public bot;
+  public bot: Telegraf;
   private ls;
+  private isMenuSended: boolean = false;
 
   constructor() {
     this.bot = this.initBot();
@@ -44,7 +49,8 @@ export class BotService implements IBot {
       ctx.reply('Мову обрано: Українська');
       ctx.editMessageReplyMarkup({
         reply_markup: false,
-      })
+      });
+      this.sendMenu(ctx.update.callback_query.from.id);
     })
 
     bot.action('en', (ctx: any) => {
@@ -53,7 +59,8 @@ export class BotService implements IBot {
       ctx.reply('Language chose: English');
       ctx.editMessageReplyMarkup({
         reply_markup: false,
-      })
+      });
+      this.sendMenu(ctx.update.callback_query.from.id);
     })
 
     return bot;
@@ -88,17 +95,21 @@ export class BotService implements IBot {
       }
       const language = await this.ls.getUserLanguage(from.id);
 
-      const keyboard = Markup.inlineKeyboard([
+      const keyboard: Markup.Markup<InlineKeyboardMarkup> = Markup.inlineKeyboard([
         Markup.button.callback('🇺🇦', UK.code),
         Markup.button.callback('🇬🇧', EN.code),
       ]);
-      translate(text.start, {to: language}).then(res => {
-        ctx.reply(res.text, keyboard);
-      }).catch(err => {
-        console.log(err);
-        ctx.reply(text.start, keyboard);
-      });
+    
+      const translatation = await this.ls.translate(text.start, language)
 
+      ctx.reply(translatation, keyboard);
     };
+  }
+
+  sendMenu(id: UserId) {
+    const menu = new Menu();
+    if (!this.isMenuSended) {
+      this.bot.telegram.sendMessage(id, menu.stringifiedMessage, menu.keyboard);
+    }
   }
 }
