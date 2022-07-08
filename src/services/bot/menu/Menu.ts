@@ -19,14 +19,12 @@ function generate_item(sticker: string, description: string, command: string): M
 export class Menu implements IMenu {
   keyboard: Markup.Markup<InlineKeyboardMarkup>;
 
-  readonly header = 'What you want to do?';
+  readonly header = 'What you want to do? Please choose action and press on button';
   readonly items = [
     generate_item('😀', 'Happy', 'a'),
     generate_item('😛', 'tounge', 'b'),
     generate_item('🤓', 'glasses', 'c'),
     generate_item('🥶', 'cold', 'd'),
-    generate_item('🤥', 'long nose', 'e'),
-    generate_item('😟', 'bad mood', 'f'),
   ]
   readonly footer = 'i am footer';
   
@@ -35,9 +33,9 @@ export class Menu implements IMenu {
   }
   
   protected generateKeyboard() {
-    const buttons: InlineKeyboardButton[][] = [];
+    const buttons: InlineKeyboardButton[] = [];
     this.items.map((item: MenuItem) => {
-      buttons.push([Markup.button.callback(item.sticker, item.command)]);
+      buttons.push(Markup.button.callback(item.sticker, item.command));
     });
     return Markup.inlineKeyboard(buttons);
   }

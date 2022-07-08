@@ -109,7 +109,9 @@ export class BotService implements IBot {
   sendMenu(id: UserId) {
     const menu = new Menu();
     if (!this.isMenuSended) {
-      this.bot.telegram.sendMessage(id, menu.stringifiedMessage, menu.keyboard);
+      setTimeout(() => {
+        this.bot.telegram.sendMessage(id, menu.stringifiedMessage, menu.keyboard);
+      }, 200)
     }
   }
 }
