@@ -19,14 +19,12 @@ function generate_item(sticker: string, description: string, command: string): M
 export class Menu implements IMenu {
   keyboard: Markup.Markup<InlineKeyboardMarkup>;
 
-  readonly header = 'What you want to do? Please choose action and press on button';
+  readonly header = 'It is menu:';
   readonly items = [
-    generate_item('😀', 'Happy', 'a'),
-    generate_item('😛', 'tounge', 'b'),
-    generate_item('🤓', 'glasses', 'c'),
-    generate_item('🥶', 'cold', 'd'),
+    generate_item('✉️', 'Send anonymous message', 'send_anonumoys_message'),
+    generate_item('🈯', 'Choose language', 'choose_language'),
   ]
-  readonly footer = 'i am footer';
+  readonly footer = 'Please choose action and press on button:👇';
   
   constructor () {
    this.keyboard = this.generateKeyboard();
@@ -41,7 +39,7 @@ export class Menu implements IMenu {
   }
 
   get stringifiedMessage() {
-    let text = `${this.header}:\n`;
+    let text = `${this.header}\n`;
     this.items.map((item: MenuItem) => {
       text = text.concat(`\n   ${item.sticker}:   ${item.description}`);
     });

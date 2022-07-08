@@ -8,22 +8,26 @@ import LocalisationService from '../localisation/localisation.service';
 import {db} from '../../db';
 import {EN, UK} from '../../constants/localisation';
 import {SENDING} from '../../constants/message/status.constants';
-import translate from '@vitalets/google-translate-api';
-import {ILocalisation} from '../../interfaces/Localisation.interface';
 import { text } from '../localisation/text';
 import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
 import { UserId } from 'src/types/user-id';
 import { Menu } from './menu';
+import { MessageAction } from 'src/types/MessageAction.type';
 
 
 export class BotService implements IBot {
   public bot: Telegraf;
   private ls;
-  private isMenuSended: boolean = false;
+  private messageAction: MessageAction = 'disabled';
+  
 
   constructor() {
     this.bot = this.initBot();
     this.ls = new LocalisationService();
+  }
+
+  private cleareAllActiveActions() {
+    this.messageAction = 'disabled';
   }
 
   private initBot(): any {
@@ -31,17 +35,41 @@ export class BotService implements IBot {
 
     bot.start(this.startHandler());
 
-    bot.on('message', (ctx: any) => {
-      const message: IMessage = {
-        clientSideMessageId: String(ctx.update.message.message_id),
-        clientChatId: String(ctx.update.message.chat.id),
-        adminSideMessageId: null,
-        date: ctx.update.message.date,
-        status: SENDING,
-      };
+    bot.command('menu', (ctx: any) => {
+      this.sendMenu(ctx.update.message.from.id);
+      this.cleareAllActiveActions();
+    });
 
-      new LoggerService().logMessage(message);
-    })
+    bot.on('message', async(ctx: any) => {
+      if (this.messageAction === 'message_waiting') {
+        const message: IMessage = {
+          clientSideMessageId: String(ctx.update.message.message_id),
+          clientChatId: String(ctx.update.message.chat.id),
+          adminSideMessageId: null,
+          date: ctx.update.message.date,
+          status: SENDING,
+        };
+  
+        new LoggerService().logMessage(message);
+        
+        this.messageAction = 'disabled';
+        ctx.reply(
+          await this.ls.translate(
+            'Message sent to processing',
+             await this.ls.getUserLanguage(ctx.update.message.from.id)
+          )
+        );
+        this.sendMenu(ctx.update.message.from.id);
+      } else {
+        ctx.reply(
+          await this.ls.translate(
+            'Unknown answer, please choose one of the given answers',
+             await this.ls.getUserLanguage(ctx.update.message.from.id)
+          )
+        );
+        this.sendMenu(ctx.update.message.from.id);
+      }
+    });
 
     bot.action('uk', (ctx: any) => {
       Markup.removeKeyboard();
@@ -51,7 +79,8 @@ export class BotService implements IBot {
         reply_markup: false,
       });
       this.sendMenu(ctx.update.callback_query.from.id);
-    })
+      this.cleareAllActiveActions();
+    });
 
     bot.action('en', (ctx: any) => {
       Markup.removeKeyboard();
@@ -61,7 +90,20 @@ export class BotService implements IBot {
         reply_markup: false,
       });
       this.sendMenu(ctx.update.callback_query.from.id);
-    })
+      this.cleareAllActiveActions();
+    });
+
+    bot.action('send_anonumoys_message', async(ctx: any) => {
+      this.messageAction = 'message_waiting';
+      ctx.reply(await this.ls.translate(
+        'I am in waiting for your message...',
+        await this.ls.getUserLanguage(ctx.update.callback_query.from.id)
+      ));
+    });
+
+    bot.action('choose_language', (ctx: any) => {
+      this.languageChoose(ctx.update.callback_query.from.id);
+    });
 
     return bot;
   }
@@ -95,23 +137,36 @@ export class BotService implements IBot {
       }
       const language = await this.ls.getUserLanguage(from.id);
 
-      const keyboard: Markup.Markup<InlineKeyboardMarkup> = Markup.inlineKeyboard([
-        Markup.button.callback('🇺🇦', UK.code),
-        Markup.button.callback('🇬🇧', EN.code),
-      ]);
-    
       const translatation = await this.ls.translate(text.start, language)
 
-      ctx.reply(translatation, keyboard);
+      ctx.reply(translatation + ' => /menu');
+
+      this.sendMenu(from.id);
     };
   }
 
   sendMenu(id: UserId) {
-    const menu = new Menu();
-    if (!this.isMenuSended) {
-      setTimeout(() => {
-        this.bot.telegram.sendMessage(id, menu.stringifiedMessage, menu.keyboard);
-      }, 200)
-    }
+    setTimeout(async () => {
+      const menu = new Menu();
+      const language = await this.ls.getUserLanguage(id);
+      const translatation = await this.ls.translate(menu.stringifiedMessage, language);
+      this.bot.telegram.sendMessage(id, translatation, menu.keyboard);
+    }, 200)
+  }
+
+  async languageChoose(id: UserId) {
+    const keyboard: Markup.Markup<InlineKeyboardMarkup> = Markup.inlineKeyboard([
+      Markup.button.callback('🇺🇦', UK.code),
+      Markup.button.callback('🇬🇧', EN.code),
+    ]);
+
+    this.bot.telegram.sendMessage(
+      id,
+      await this.ls.translate(
+        'Please choose a language, press on button:👇🈯',
+        await this.ls.getUserLanguage(id)
+      ),
+      keyboard
+    )
   }
 }
