@@ -1,1 +1,1 @@
-export type MessageAction = 'disabled' | 'message_waiting' | 'sended';
+export type MessageAction = 'disabled' | 'message_waiting' | 'sent';

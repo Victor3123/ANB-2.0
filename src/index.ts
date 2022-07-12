@@ -1,6 +1,10 @@
 import {BotService} from "./services/bot";
-import {IBot} from "./interfaces/Bot.interface";
+import {Bot} from "./types/Bot.type";
 
-const botInstance: IBot = new BotService();
 
-botInstance.bot.launch();
+async function main(): Promise<void> {
+  const botInstance: Bot = new BotService();
+  await botInstance.bot.launch();
+}
+
+main().then();

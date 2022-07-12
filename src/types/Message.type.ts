@@ -1,6 +1,6 @@
-import {MessageStatus} from '../types/message/status';
+import {MessageStatus} from './message/status';
 
-export interface IMessage {
+export interface Message {
   adminSideMessageId: string | number | null;
   clientChatId:  string | number;
   clientSideMessageId: string | number;
