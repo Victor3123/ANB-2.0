@@ -1,10 +1,7 @@
-import {BotService} from "./services/bot";
-import {Bot} from "./types/Bot.type";
+import {BotService} from './services/bot';
+import {Bot} from './types/Bot.type';
+import {SenderService} from './services/message-sender';
 
-
-async function main(): Promise<void> {
-  const botInstance: Bot = new BotService();
-  await botInstance.bot.launch();
-}
-
-main().then();
+export const botInstance: Bot = new BotService();
+new SenderService();
+botInstance.bot.launch().then();

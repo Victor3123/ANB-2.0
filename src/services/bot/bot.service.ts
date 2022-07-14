@@ -110,6 +110,7 @@ export class BotService implements Bot {
 
   private startHandler(): (ctx: Context) => Promise<void> {
     return async (ctx) => {
+      console.log(`\n\n${ctx.message?.from.id}\n\n${ctx.message?.chat.id}`);
       const from = ctx.from;
       if (from !== undefined) {
         const response = await db.collection('users').get();
@@ -125,6 +126,7 @@ export class BotService implements Bot {
         if (!match) {
           const user: User = {
             id: String(from.id),
+            chatId: ctx.message?.chat.id,
             language: new LocalisationService().defaultLanguage,
             isBlocked: false,
             name: from.first_name,
