@@ -145,7 +145,7 @@ export class BotService implements Bot {
     return async (ctx) => {
       const from = ctx.from;
 
-      User.registerUser({
+      await User.registerUser({
         telegramUserId: from!.id,
         chatId: ctx.message!.chat.id,
         name: from!.first_name,
