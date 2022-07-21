@@ -2,11 +2,9 @@ import {Localisation} from '../../types/Localisation.type';
 import {Language} from '../../types/Language.type';
 import {UserId} from '../../types/user-id';
 import {EN} from '../../constants/localisation';
-import {db} from '../../db';
+import db from '../../db/database';
 import {LanguageCode} from '../../types/localisation';
-import {firestore} from 'firebase-admin';
 import translate from '@vitalets/google-translate-api';
-import DocumentData = firestore.DocumentData;
 
 export default class LocalisationService implements Localisation {
   private readonly defaultLanguage$: Language;
@@ -19,19 +17,29 @@ export default class LocalisationService implements Localisation {
     return this.defaultLanguage$;
   }
 
-  async setLanguage(lang: Language, user: UserId) {
-    await db.collection('users').doc(String(user)).set({language: lang}, {merge: true});
+  async setLanguage(lang: Language, id: UserId) {
+    // todo: remove bullshit code
+    const usersRes = await db.query(
+      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
+      [id]
+    );
+    await db.query(
+      'UPDATE user_languages SET code = $1 WHERE user_id = $2',
+      [lang.code, usersRes.rows[0].id]
+    );
   }
 
-  async getUserLanguage(id: UserId): Promise<any> {
-    let code;
-    const response = await db.collection('users').get();
-    response.forEach((doc: DocumentData) => {
-      if (String(id) === String(doc.id)) {
-        code = doc.data().language.code;
-      }
-    })
-    return code;
+  async getUserLanguage(id: UserId): Promise<LanguageCode> {
+    // todo: remove bullshit code
+    const usersRes = await db.query(
+      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
+      [id]
+    );
+    const res = await db.query(
+      'SELECT * FROM user_languages WHERE user_id = $1 LIMIT 1',
+      [usersRes.rows[0].id]
+    );
+    return res.rows[0].code;
   }
 
   async translate(text: string, to: LanguageCode): Promise<string> {
@@ -39,3 +47,4 @@ export default class LocalisationService implements Localisation {
     return res.text;
   }
 }
+

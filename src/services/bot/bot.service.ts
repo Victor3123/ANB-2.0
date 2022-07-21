@@ -2,32 +2,61 @@ import {LoggerService} from '../logger/logger.service';
 import {Context, Markup, Telegraf} from 'telegraf';
 import {Update} from 'typegram';
 import {Bot} from '../../types/Bot.type';
-import {User} from '../../types/User.type';
 import {Message} from '../../types/Message.type';
 import LocalisationService from '../localisation/localisation.service';
-import {db} from '../../db';
+import db from '../../db/database';
 import {EN, UK} from '../../constants/localisation';
 import {SENDING} from '../../constants/message/status.constants';
-import { text } from '../localisation/text';
-import { InlineKeyboardMarkup } from 'telegraf/typings/core/types/typegram';
-import { UserId } from 'src/types/user-id';
-import { Menu } from './menu';
-import { MessageAction } from 'src/types/MessageAction.type';
+import {text} from '../localisation/text';
+import {InlineKeyboardMarkup} from 'telegraf/typings/core/types/typegram';
+import {UserId} from 'src/types/user-id';
+import {UserMenu, AdminMenu} from './menu';
+import {MessageAction} from 'src/types/MessageAction.type';
+import {User} from './User';
+import _ from 'lodash';
 
+class Action {
+  static async getMessageAction(id: UserId) {
+    // todo: remove bullshit code
+    const usersRes = await db.query(
+      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
+      [id]
+    );
+    const res = await db.query(
+      'SELECT * FROM user_actions WHERE user_id = $1 LIMIT 1',
+      [usersRes.rows[0].id]
+    );
+    if (!_.isEmpty(res.rows)) {
+      return res.rows[0].action;
+    } 
+  }
+
+  static async setMessageAction
+  (
+    id: UserId,
+    action: MessageAction
+  ): Promise<void>
+  {
+    // todo: remove bullshit code
+    const usersRes = await db.query(
+      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
+      [id]
+    );
+    await db.query('UPDATE user_actions SET action = $1 WHERE user_id = $2', [action, usersRes.rows[0].id]);
+  }
+}
 
 export class BotService implements Bot {
   public bot: Telegraf<Context<Update>>;
   private ls;
-  private messageAction: MessageAction = 'disabled';
-
 
   constructor() {
     this.bot = this.initBot();
     this.ls = new LocalisationService();
   }
 
-  private clearAllActiveActions() {
-    this.messageAction = 'disabled';
+  private async clearAllActiveActions(userId: UserId) {
+    await Action.setMessageAction(userId, 'disabled');
   }
 
   private initBot(): Telegraf<Context<Update>> {
@@ -35,13 +64,17 @@ export class BotService implements Bot {
 
     bot.start(this.startHandler());
 
-    bot.command('menu', (ctx) => {
-      this.sendMenu(ctx.update.message.from.id);
-      this.clearAllActiveActions();
+    bot.command('menu', async (ctx) => {
+      await this.sendUserMenu(ctx.update.message.from.id);
+      this.clearAllActiveActions(ctx.update.message.from.id);
     });
 
     bot.on('message', async(ctx) => {
-      if (this.messageAction === 'message_waiting') {
+      if (
+          await Action.getMessageAction(ctx.update.message.from.id)
+          === 
+          'message_waiting'
+        ) {
         const message: Message = {
           clientSideMessageId: String(ctx.update.message.message_id),
           clientChatId: String(ctx.update.message.chat.id),
@@ -52,45 +85,45 @@ export class BotService implements Bot {
 
         await new LoggerService().logMessage(message);
 
-        this.messageAction = 'disabled';
-        ctx.reply(
+        this.clearAllActiveActions(ctx.update.message.from.id);
+        await ctx.reply(
           await this.ls.translate(
             'Message sent to processing',
              await this.ls.getUserLanguage(ctx.update.message.from.id)
           )
         );
-        this.sendMenu(ctx.update.message.from.id);
+        await this.sendUserMenu(ctx.update.message.from.id);
       } else {
-        ctx.reply(
+        await ctx.reply(
           await this.ls.translate(
             'Unknown answer, please choose one of the given answers',
-             await this.ls.getUserLanguage(ctx.update.message.from.id)
+            await this.ls.getUserLanguage(ctx.update.message.from.id)
           )
         );
-        this.sendMenu(ctx.update.message.from.id);
+        await this.sendUserMenu(ctx.update.message.from.id);
       }
     });
 
     bot.action('uk', async (ctx) => {
       Markup.removeKeyboard();
       await this.ls.setLanguage(UK, ctx.update.callback_query.from.id);
-      ctx.reply('Мову обрано: Українська');
-      ctx.editMessageReplyMarkup(undefined);
-      this.sendMenu(ctx.update.callback_query.from.id);
-      this.clearAllActiveActions();
+      await ctx.reply('Мову обрано: Українська');
+      await ctx.editMessageReplyMarkup(undefined);
+      await this.sendUserMenu(ctx.update.callback_query.from.id);
+      this.clearAllActiveActions(ctx.update.callback_query.from.id);
     });
 
     bot.action('en', async (ctx) => {
       Markup.removeKeyboard();
       await this.ls.setLanguage(EN, ctx.update.callback_query.from.id);
-      ctx.reply('Language chose: English');
-      ctx.editMessageReplyMarkup(undefined);
-      this.sendMenu(ctx.update.callback_query.from.id);
-      this.clearAllActiveActions();
+      await ctx.reply('Language chose: English');
+      await ctx.editMessageReplyMarkup(undefined);
+      await this.sendUserMenu(ctx.update.callback_query.from.id);
+      this.clearAllActiveActions(ctx.update.callback_query.from.id);
     });
 
     bot.action('send_anonymous_message', async(ctx) => {
-      this.messageAction = 'message_waiting';
+      await Action.setMessageAction(ctx.update.callback_query.from.id, 'message_waiting');
       ctx.reply(await this.ls.translate(
         'I am in waiting for your message...',
         await this.ls.getUserLanguage(ctx.update.callback_query.from.id)
@@ -111,49 +144,38 @@ export class BotService implements Bot {
   private startHandler(): (ctx: Context) => Promise<void> {
     return async (ctx) => {
       const from = ctx.from;
-      if (from !== undefined) {
-        const response = await db.collection('users').get();
 
-        let match = false;
+      User.registerUser({
+        telegramUserId: from!.id,
+        chatId: ctx.message!.chat.id,
+        name: from!.first_name,
+      });
 
-        response.forEach(doc => {
-          if (String(doc.data().id) === String(from.id)) {
-            match = true;
-          }
-        })
+      const language = await this.ls.getUserLanguage(from!.id);
+      const translation = await this.ls.translate(text.start, language)
 
-        if (!match) {
-          const user: User = {
-            id: String(from.id),
-            chatId: ctx.message?.chat.id,
-            language: new LocalisationService().defaultLanguage,
-            isBlocked: false,
-            name: from.first_name,
-          };
-
-          await db.collection('users').doc(String(from.id)).set(user);
-        }
-        const language = await this.ls.getUserLanguage(from.id);
-
-        const translation = await this.ls.translate(text.start, language)
-
-        await ctx.reply(translation + ' => /menu');
-
-        this.sendMenu(from.id);
-      }
+      await ctx.reply(translation + ' => /menu');
+      await this.sendUserMenu(from!.id);
     };
   }
 
-  sendMenu(id: UserId) {
+  private async sendUserMenu(id: UserId) {
+    const menu = new UserMenu();
+    const language = await this.ls.getUserLanguage(id);
+    const translation = await this.ls.translate(menu.messageStringify, language);
+    await this.bot.telegram.sendMessage(id, translation, menu.keyboard);
+  }
+
+  private sendAdminMenu(id: UserId) {
     setTimeout(async () => {
-      const menu = new Menu();
+      const menu = new AdminMenu();
       const language = await this.ls.getUserLanguage(id);
       const translation = await this.ls.translate(menu.messageStringify, language);
       await this.bot.telegram.sendMessage(id, translation, menu.keyboard);
     }, 200)
   }
 
-  async languageChoose(id: UserId) {
+  private async languageChoose(id: UserId) {
     const keyboard: Markup.Markup<InlineKeyboardMarkup> = Markup.inlineKeyboard([
       Markup.button.callback('🇺🇦', UK.code),
       Markup.button.callback('🇬🇧', EN.code),

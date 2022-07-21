@@ -1,1 +1,2 @@
-export * from './Menu';
+export * from './User.menu';
+export * from './Admin.menu';

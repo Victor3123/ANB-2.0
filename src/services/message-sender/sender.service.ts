@@ -1,17 +1,15 @@
 import {MessageSenderType, Milliseconds} from '../../types/MessageSender.type';
-import {db} from '../../db';
+import db from '../../db/database';
 import {SENDING} from '../../constants/message/status.constants';
 import {botInstance} from '../../index';
 import {SENT} from '../../constants/message/status.constants';
-import {firestore} from 'firebase-admin/lib/firestore/firestore-namespace';
-import QueryDocumentSnapshot = firestore.QueryDocumentSnapshot;
+import {QueryResultRow} from 'pg';
+import {MessageStatus} from '../../types/message/status';
 
 export class SenderService implements MessageSenderType {
   public readonly intervalTimeMs: Milliseconds = 3000;
 
   private messageHandler: NodeJS.Timer;
-  private messagesCollection: string = 'messages';
-  private usersCollection: string = 'users';
 
   constructor() {
     this.messageHandler = this.initMessageHandler();
@@ -31,81 +29,52 @@ export class SenderService implements MessageSenderType {
       admins.map(admin => {
         botInstance.bot.telegram
           .copyMessage(
-            admin.data().chatId,
-            message.data().clientChatId,
-            message.data().clientSideMessageId
+            admin.chat_id,
+            message.client_chat_id,
+            message.client_message_id
           ).then(res => {
           botInstance.bot.telegram.sendMessage(
-            admin.data().chatId,
+            admin.chat_id,
             '#anonymousmessage',
             {reply_to_message_id: res.message_id}
           );
-          this.addOneAdminChatId(message.data().clientSideMessageId, res.message_id);
-          this.setStatusMessage(message.data().clientSideMessageId, SENT);
+
+          this.addOneAdminChatId(message.client_message_id, res.message_id);
+          this.setStatusMessage(message.client_message_id, SENT);
         });
       });
     });
   }
 
-  protected async getMessagesInProcessing(): Promise<QueryDocumentSnapshot[]> {
-    let messages: QueryDocumentSnapshot[] = [];
+  protected async getMessagesInProcessing(): Promise<QueryResultRow[]> {
+    const messageRes = await db.query(
+      'SELECT * FROM messages WHERE status = $1',
+      [SENDING]
+    );
 
-    const snapshot = await db.collection(this.messagesCollection).get();
-    snapshot.forEach(message => {
-      if (message.data().status === SENDING) {
-        messages.push(message);
-      }
-    });
-
-    return messages;
+    return messageRes.rows;
   }
 
-  protected async getAdmins(): Promise<QueryDocumentSnapshot[]> {
-    const admins: QueryDocumentSnapshot[] = [];
+  protected async getAdmins(): Promise<QueryResultRow[]> {
+    const usersRes = await db.query('SELECT * FROM users WHERE is_admin = true');
 
-    const snapshot = await db.collection(this.usersCollection).get();
-    snapshot.forEach(user => {
-      if (user.data().isAdmin !== undefined) {
-        admins.push(user);
-      }
-    });
-
-    return admins;
+    return usersRes.rows;
   }
 
-  protected async setStatusMessage(clientSideId: string, status: string) {
-    await db.collection(this.messagesCollection).doc(clientSideId)
-      .set({
-        status: status,
-      }, {merge: true})
+  protected async setStatusMessage(clientMessageId: string, status: MessageStatus) {
+    await db.query(
+      'UPDATE messages SET status = $1 WHERE client_message_id = $2',
+      [status, clientMessageId]
+    );
   }
 
   protected async addOneAdminChatId(
-    clientSideMessageId: string | number,
-    adminSideMessageId: string | number,
+    clientSideMessageId: number,
+    adminSideMessageId: number,
   ): Promise<void> {
-    const messages = await db.collection(this.messagesCollection).get();
-
-    messages.forEach(message => {
-      if (
-        String(clientSideMessageId)
-        ===
-        String(message.data().clientSideMessageId)
-      ) {
-        if (message.data().adminSideMessageId !== null) {
-          const array: string[] = message.data().adminSideMessageId;
-          array.push(String(adminSideMessageId));
-          db.collection(this.messagesCollection).doc(String(clientSideMessageId))
-            .set({
-              adminSideMessageId: array
-            }, {merge: true});
-        } else {
-          db.collection(this.messagesCollection).doc(String(clientSideMessageId))
-            .set({
-              adminSideMessageId: [String(adminSideMessageId)]
-            }, {merge: true});
-        }
-      }
-    });
+    await db.query(
+      'UPDATE messages SET admin_message_id = array_append(admin_message_id, $1) WHERE client_message_id = $2',
+      [adminSideMessageId, clientSideMessageId]
+    )
   }
 }

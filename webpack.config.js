@@ -1,6 +1,7 @@
 const path = require('path');
 const Dotenv = require('dotenv-webpack');
 const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
+const webpack = require("webpack");
 
 module.exports = {
   entry: './src/index.ts',
@@ -10,7 +11,8 @@ module.exports = {
     new Dotenv(),
     new NodePolyfillPlugin({
       includeAliases: ['console']
-    })
+    }),
+    new webpack.IgnorePlugin({ resourceRegExp: /^pg-native$/ }),
   ],
   module: {
     rules: [
