@@ -17,32 +17,33 @@ import _ from 'lodash';
 
 class Action {
   static async getMessageAction(id: UserId) {
-    // todo: remove bullshit code
-    const usersRes = await db.query(
-      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
-      [id]
-    );
     const res = await db.query(
-      'SELECT * FROM user_actions WHERE user_id = $1 LIMIT 1',
-      [usersRes.rows[0].id]
+      `
+          SELECT ul.action
+          FROM users
+                   JOIN user_actions ul on users.id = ul.user_id
+          WHERE telegram_user_id = $1;
+      `,
+      [id]
     );
     if (!_.isEmpty(res.rows)) {
       return res.rows[0].action;
-    } 
+    }
   }
 
   static async setMessageAction
   (
     id: UserId,
     action: MessageAction
-  ): Promise<void>
-  {
-    // todo: remove bullshit code
-    const usersRes = await db.query(
-      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
-      [id]
-    );
-    await db.query('UPDATE user_actions SET action = $1 WHERE user_id = $2', [action, usersRes.rows[0].id]);
+  ): Promise<void> {
+    await db.query(
+      `
+          UPDATE user_actions
+          SET action = $1
+          FROM users
+          WHERE user_actions.user_id = users.id
+            AND users.telegram_user_id = $2;
+      `, [action, id]);
   }
 }
 
@@ -69,15 +70,15 @@ export class BotService implements Bot {
       this.clearAllActiveActions(ctx.update.message.from.id);
     });
 
-    bot.on('message', async(ctx) => {
+    bot.on('message', async (ctx) => {
       if (
-          await Action.getMessageAction(ctx.update.message.from.id)
-          === 
-          'message_waiting'
-        ) {
+        await Action.getMessageAction(ctx.update.message.from.id)
+        ===
+        'message_waiting'
+      ) {
         const message: Message = {
-          clientSideMessageId: String(ctx.update.message.message_id),
-          clientChatId: String(ctx.update.message.chat.id),
+          clientSideMessageId: ctx.update.message.message_id,
+          clientChatId: ctx.update.message.chat.id,
           adminSideMessageId: null,
           date: new Date(),
           status: SENDING,
@@ -89,7 +90,7 @@ export class BotService implements Bot {
         await ctx.reply(
           await this.ls.translate(
             'Message sent to processing',
-             await this.ls.getUserLanguage(ctx.update.message.from.id)
+            await this.ls.getUserLanguage(ctx.update.message.from.id)
           )
         );
         await this.sendUserMenu(ctx.update.message.from.id);
@@ -122,7 +123,7 @@ export class BotService implements Bot {
       this.clearAllActiveActions(ctx.update.callback_query.from.id);
     });
 
-    bot.action('send_anonymous_message', async(ctx) => {
+    bot.action('send_anonymous_message', async (ctx) => {
       await Action.setMessageAction(ctx.update.callback_query.from.id, 'message_waiting');
       ctx.reply(await this.ls.translate(
         'I am in waiting for your message...',

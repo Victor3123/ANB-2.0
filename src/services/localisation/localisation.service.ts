@@ -18,26 +18,31 @@ export default class LocalisationService implements Localisation {
   }
 
   async setLanguage(lang: Language, id: UserId) {
-    // todo: remove bullshit code
-    const usersRes = await db.query(
-      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
-      [id]
-    );
+
     await db.query(
-      'UPDATE user_languages SET code = $1 WHERE user_id = $2',
-      [lang.code, usersRes.rows[0].id]
+      `
+          UPDATE user_languages
+          SET code = $1
+          FROM users
+          WHERE user_languages.user_id = users.id
+            AND users.telegram_user_id = $2;
+      `,
+      [lang.code, id]
     );
   }
 
   async getUserLanguage(id: UserId): Promise<LanguageCode> {
-    // todo: remove bullshit code
-    const usersRes = await db.query(
-      'SELECT * FROM users WHERE telegram_user_id = $1 LIMIT 1',
-      [id]
-    );
     const res = await db.query(
-      'SELECT * FROM user_languages WHERE user_id = $1 LIMIT 1',
-      [usersRes.rows[0].id]
+      `
+          SELECT users.id,
+                 users.telegram_user_id,
+                 ul.code
+          FROM users
+                   JOIN user_languages ul on users.id = ul.user_id
+          WHERE telegram_user_id = $1
+          LIMIT 1;
+      `,
+      [id]
     );
     return res.rows[0].code;
   }
