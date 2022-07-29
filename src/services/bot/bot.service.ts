@@ -14,6 +14,7 @@ import {UserMenu, AdminMenu} from './menu';
 import {MessageAction} from 'src/types/MessageAction.type';
 import {User} from './User';
 import _ from 'lodash';
+import {ChatId} from '../../types/ChatId.type';
 
 class Action {
   static async getMessageAction(id: UserId) {
@@ -56,6 +57,22 @@ export class BotService implements Bot {
     this.ls = new LocalisationService();
   }
 
+  private async isAdmin(userId: UserId): Promise<boolean> {
+    this;
+    const res = await db.query(
+      `SELECT is_admin
+       FROM users
+       WHERE telegram_user_id = $1
+       LIMIT 1`,
+      [userId]
+    );
+    if (!_.isEmpty(res.rows)) {
+      return res.rows[0].is_admin;
+    } else {
+      return false;
+    }
+  }
+
   private async clearAllActiveActions(userId: UserId) {
     await Action.setMessageAction(userId, 'disabled');
   }
@@ -66,9 +83,27 @@ export class BotService implements Bot {
     bot.start(this.startHandler());
 
     bot.command('menu', async (ctx) => {
-      await this.sendUserMenu(ctx.update.message.from.id);
-      this.clearAllActiveActions(ctx.update.message.from.id);
+      await this.sendMenuConsideringRole(ctx.update.message.from.id, ctx.update.message.chat.id);
+      await this.clearAllActiveActions(ctx.update.message.from.id);
     });
+
+    bot.command('giveAdmin', async (ctx) => {
+      if (await this.isAdmin(ctx.from.id)) {
+        const match = ctx.message.text.match(/\/giveAdmin\s(.+)/);
+        if (!_.isEmpty(match)) {
+          await User.setAdminStatus(true, Number(match![1]));
+        }
+      }
+    })
+
+    bot.command('removeAdmin', async (ctx) => {
+      if (await this.isAdmin(ctx.from.id)) {
+        const match = ctx.message.text.match(/\/giveAdmin\s(.+)/);
+        if (!_.isEmpty(match)) {
+          await User.setAdminStatus(false, Number(match![1]));
+        }
+      }
+    })
 
     bot.on('message', async (ctx) => {
       if (
@@ -86,14 +121,14 @@ export class BotService implements Bot {
 
         await new LoggerService().logMessage(message);
 
-        this.clearAllActiveActions(ctx.update.message.from.id);
+        await this.clearAllActiveActions(ctx.update.message.from.id);
         await ctx.reply(
           await this.ls.translate(
             'Message sent to processing',
             await this.ls.getUserLanguage(ctx.update.message.from.id)
           )
         );
-        await this.sendUserMenu(ctx.update.message.from.id);
+        await this.sendMenuConsideringRole(ctx.update.message.from.id, ctx.update.message.chat.id);
       } else {
         await ctx.reply(
           await this.ls.translate(
@@ -101,7 +136,7 @@ export class BotService implements Bot {
             await this.ls.getUserLanguage(ctx.update.message.from.id)
           )
         );
-        await this.sendUserMenu(ctx.update.message.from.id);
+        await this.sendMenuConsideringRole(ctx.update.message.from.id, ctx.update.message.chat.id);
       }
     });
 
@@ -110,8 +145,8 @@ export class BotService implements Bot {
       await this.ls.setLanguage(UK, ctx.update.callback_query.from.id);
       await ctx.reply('Мову обрано: Українська');
       await ctx.editMessageReplyMarkup(undefined);
-      await this.sendUserMenu(ctx.update.callback_query.from.id);
-      this.clearAllActiveActions(ctx.update.callback_query.from.id);
+      await this.sendMenuConsideringRole(ctx.update.callback_query.from.id, ctx.chat!.id);
+      await this.clearAllActiveActions(ctx.update.callback_query.from.id);
     });
 
     bot.action('en', async (ctx) => {
@@ -119,16 +154,26 @@ export class BotService implements Bot {
       await this.ls.setLanguage(EN, ctx.update.callback_query.from.id);
       await ctx.reply('Language chose: English');
       await ctx.editMessageReplyMarkup(undefined);
-      await this.sendUserMenu(ctx.update.callback_query.from.id);
-      this.clearAllActiveActions(ctx.update.callback_query.from.id);
+      await this.sendMenuConsideringRole(ctx.update.callback_query.from.id, ctx.chat!.id);
+      await this.clearAllActiveActions(ctx.update.callback_query.from.id);
     });
 
     bot.action('send_anonymous_message', async (ctx) => {
       await Action.setMessageAction(ctx.update.callback_query.from.id, 'message_waiting');
       ctx.reply(await this.ls.translate(
         'I am in waiting for your message...',
-        await this.ls.getUserLanguage(ctx.update.callback_query.from.id)
+        await this.ls.getUserLanguage(ctx.from!.id)
       ));
+    });
+
+    bot.action('get_help', async (ctx) => {
+      ctx.reply(
+        await this.ls.translate(
+          text.help,
+          await this.ls.getUserLanguage(ctx.from!.id)
+        )
+      );
+      await this.sendMenuConsideringRole(ctx.from!.id, ctx.chat!.id);
     });
 
     bot.action('choose_language', async (ctx) => {
@@ -145,34 +190,61 @@ export class BotService implements Bot {
   private startHandler(): (ctx: Context) => Promise<void> {
     return async (ctx) => {
       const from = ctx.from;
+      if (!await this.isAdmin(from!.id)) {
+        await User.registerUser({
+          telegramUserId: from!.id,
+          chatId: ctx.message!.chat.id,
+          name: from!.first_name,
+        });
 
-      await User.registerUser({
-        telegramUserId: from!.id,
-        chatId: ctx.message!.chat.id,
-        name: from!.first_name,
-      });
+        const language = await this.ls.getUserLanguage(from!.id);
+        const translation = await this.ls.translate(text.start, language)
 
-      const language = await this.ls.getUserLanguage(from!.id);
-      const translation = await this.ls.translate(text.start, language)
-
-      await ctx.reply(translation + ' => /menu');
-      await this.sendUserMenu(from!.id);
+        await ctx.reply(translation + ' => /menu');
+        await this.sendUserMenu(from!.id);
+      } else {
+        let username = 'user';
+        const res = await db.query(
+          `
+              SELECT name
+              from users
+              WHERE telegram_user_id = $1
+              LIMIT 1`,
+          [from!.id]
+        );
+        if (!_.isEmpty(res.rows)) {
+          username = res.rows[0].name;
+        }
+        await ctx.reply(`You registered as administrator. Welcome ${username}!`);
+        await this.sendAdminMenu(from!.id);
+      }
     };
   }
 
-  private async sendUserMenu(id: UserId) {
-    const menu = new UserMenu();
-    const language = await this.ls.getUserLanguage(id);
-    const translation = await this.ls.translate(menu.messageStringify, language);
-    await this.bot.telegram.sendMessage(id, translation, menu.keyboard);
+  private async sendMenuConsideringRole(
+    userId: UserId,
+    chatId: ChatId
+  ): Promise<void> {
+    if (await this.isAdmin(userId)) {
+      await this.sendAdminMenu(chatId);
+    } else {
+      await this.sendUserMenu(chatId);
+    }
   }
 
-  private sendAdminMenu(id: UserId) {
+  private async sendUserMenu(chatId: ChatId) {
+    const menu = new UserMenu();
+    const language = await this.ls.getUserLanguage(chatId);
+    const translation = await this.ls.translate(menu.messageStringify, language);
+    await this.bot.telegram.sendMessage(chatId, translation, menu.keyboard);
+  }
+
+  private sendAdminMenu(chatId: ChatId) {
     setTimeout(async () => {
       const menu = new AdminMenu();
-      const language = await this.ls.getUserLanguage(id);
+      const language = await this.ls.getUserLanguage(chatId);
       const translation = await this.ls.translate(menu.messageStringify, language);
-      await this.bot.telegram.sendMessage(id, translation, menu.keyboard);
+      await this.bot.telegram.sendMessage(chatId, translation, menu.keyboard);
     }, 200)
   }
 

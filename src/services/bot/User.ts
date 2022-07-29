@@ -1,5 +1,6 @@
-import db from "../../db/database";
-import { NewUserType } from "../../types/NewUserType";
+import db from '../../db/database';
+import {NewUserType} from '../../types/NewUserType';
+import {UserId} from '../../types/user-id';
 
 export class User {
   static async registerUser(userObject: NewUserType) {
@@ -22,9 +23,18 @@ export class User {
           [user.rows[0].id, 'disabled']
         )
       }
-    }
-    catch(e) {
+    } catch (e) {
       console.log(e);
     }
+  }
+
+  static async setAdminStatus(status: boolean, userId: UserId) {
+    let res = await db.query(`
+        UPDATE users
+        SET is_admin = $1
+        WHERE telegram_user_id = $2
+        RETURNING *`,
+      [status, userId]
+    )
   }
 }

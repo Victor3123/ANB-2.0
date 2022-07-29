@@ -5,6 +5,7 @@ import {EN} from '../../constants/localisation';
 import db from '../../db/database';
 import {LanguageCode} from '../../types/localisation';
 import translate from '@vitalets/google-translate-api';
+import _ from 'lodash';
 
 export default class LocalisationService implements Localisation {
   private readonly defaultLanguage$: Language;
@@ -44,7 +45,11 @@ export default class LocalisationService implements Localisation {
       `,
       [id]
     );
-    return res.rows[0].code;
+    if (!_.isEmpty(res.rows)) {
+      return res.rows[0].code;
+    } else {
+      return this.defaultLanguage$.code;
+    }
   }
 
   async translate(text: string, to: LanguageCode): Promise<string> {
